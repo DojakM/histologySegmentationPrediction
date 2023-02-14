@@ -1,0 +1,27 @@
+Collecting package metadata (current_repodata.json): ...working... done
+Solving environment: ...working... done
+
+## Package Plan ##
+
+  environment location: /Users/dominikmolitor/opt/anaconda3/envs/seg_training
+
+  added / updated specs:
+    - pytorch-lightning
+
+
+The following NEW packages will be INSTALLED:
+
+  future             conda-forge/osx-64::future-0.18.2-py37_0 None
+  pytorch-lightning  conda-forge/noarch::pytorch-lightning-0.8.5-py_0 None
+
+The following packages will be UPDATED:
+
+  openssl              pkgs/main::openssl-1.1.1s-hca72f7f_0 --> conda-forge::openssl-1.1.1s-hfd90126_1 None
+
+The following packages will be SUPERSEDED by a higher-priority channel:
+
+  ca-certificates    pkgs/main::ca-certificates-2023.01.10~ --> conda-forge::ca-certificates-2022.12.7-h033912b_0 None
+  certifi            pkgs/main/osx-64::certifi-2022.12.7-p~ --> conda-forge/noarch::certifi-2022.12.7-pyhd8ed1ab_0 None
+
+
+Proceed ([y]/n)? 
