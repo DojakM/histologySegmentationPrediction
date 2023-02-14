@@ -3,7 +3,7 @@ import torch.nn.init
 
 from model.model_components import UnetConv, UnetUp
 from model.unet_super import UnetSuper
-from torch.nn.init import uniform_
+from utils import weights_init
 
 class Unet(UnetSuper):
     def __init__(self, len_test_set, hparams, input_channels=3,is_batchnorm=True, **kwargs):
@@ -23,6 +23,7 @@ class Unet(UnetSuper):
         self.up_concat1 = UnetUp(filters[1], filters[0])
         # final conv (without any concat)
         self.final = nn.Conv2d(filters[0], kwargs["num_classes"], 1)
+        self.apply(weights_init)
 
     def forward(self, inputs):
         conv1 = self.conv1(inputs)  # 16*256*256

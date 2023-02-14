@@ -6,6 +6,7 @@ import tifffile as tiff
 import torch
 from rich import traceback
 from model.unet_instance import Unet
+from utils import weights_init
 
 WD = os.path.dirname(__file__)
 @click.command()
@@ -48,7 +49,10 @@ def write_ome_out(image, classification, ids) -> None:
         tif_file.write(full_image, photometric="rgb", metadata=metadata)
 
 def get_pytorch_model(path_to_pytorch_model: str):
-    model = Unet.load_from_checkpoint(path_to_pytorch_model, num_classes=7, len_test_set=1, strict=False).to('cpu')
+    model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7).to("cpu")
+    model.apply(weights_init)
+    state_dict = torch.load("best-v2.ckpt", map_location="cpu")
+    model.load_state_dict(state_dict["state_dict"], strict=False)
     model.eval()
     return model
 

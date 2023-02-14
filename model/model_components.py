@@ -35,7 +35,7 @@ class UnetConv(nn.Module):
 
 
 class UnetUp(nn.Module):
-    def __init__(self, in_size, out_size, cuda=False, init = False):
+    def __init__(self, in_size, out_size, cuda=False):
         super(UnetUp, self).__init__()
         self.conv = UnetConv(in_size, out_size, False)
         self.up = nn.Sequential(
@@ -45,8 +45,6 @@ class UnetUp(nn.Module):
         if cuda:
             self.conv.cuda()
             self.up.cuda()
-        if init:
-            self.conv.apply
 
     def forward(self, high_feature, *low_feature):
         outputs0 = self.up(high_feature)
