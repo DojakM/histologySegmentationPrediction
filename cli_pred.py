@@ -7,6 +7,7 @@ import torch
 from rich import traceback
 from model.unet_instance import Unet
 from utils import weights_init
+import glob
 
 WD = os.path.dirname(__file__)
 @click.command()
@@ -20,17 +21,16 @@ def main(input: str, suffix: str,  cuda: bool, output: str, ome: bool):
     model = get_pytorch_model(input)
     if cuda:
         model.cuda()
-    img = read_data_to_predict("/Users/dominikmolitor/PycharmProjects/seg_predict/consep_1-0000.ome.tif")
-    res = predict(img, model)
-    write_ome_out(img, res, 1)
+
 
 def read_data_to_predict(path_to_data_to_predict: str):
     data = tiff.imread(path_to_data_to_predict)
-    data = data.transpose(2, 1, 0)
-    label = data[:, :, 3]
-    image = data[:, :, :3]
+    label = data[3, :, :]
+    image = data[:3, :, :]
     return image
 
+def download_model(download: str):
+    pass
 
 def write_results(predictions: np.ndarray, path_to_write_to) -> None:
     pass
@@ -38,29 +38,39 @@ def write_results(predictions: np.ndarray, path_to_write_to) -> None:
 
 def write_ome_out(image, classification, ids) -> None:
     full_image = np.zeros((256, 256, 4))
-    full_image[:, :, 0] = image[:, :, 0]
-    full_image[:, :, 1] = image[:, :, 1]
-    full_image[:, :, 2] = image[:, :, 2]
-    full_image[:, :, 3] = classification[:, :]
+    full_image[:, :, 0] = image[0, :, :]
+    full_image[:, :, 1] = image[1, :, :]
+    full_image[:, :, 2] = image[2, :, :]
+    full_image[:, :, 3] = mask_binning(classification[0,:,:,:])
     full_image = np.transpose(full_image, (2, 0, 1))
-    with tiff.TiffWriter(os.path.join("./OME-TIFFs/", "conic_" + str(ids) + ".ome.tif"), bigtiff=True) as tif_file:
+    with tiff.TiffWriter(os.path.join(".", "conic_" + str(ids) + ".ome.tif"), bigtiff=True) as tif_file:
         metadata = {"axes": "CYX",
                     'Channel': {"Name": ["red", "green", "blue", "mask"]}}
         tif_file.write(full_image, photometric="rgb", metadata=metadata)
 
+def mask_binning(classification: torch.Tensor):
+    classification = classification.detach().numpy()
+    classification = np.argmax(classification, axis=0)
+    return classification
+
 def get_pytorch_model(path_to_pytorch_model: str):
-    model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7).to("cpu")
-    model.apply(weights_init)
-    state_dict = torch.load("best-v2.ckpt", map_location="cpu")
-    model.load_state_dict(state_dict["state_dict"], strict=False)
-    model.eval()
-    return model
+    if len(glob.glob(os.getcwd()+path_to_pytorch_model)) > 0:
+        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model.apply(weights_init)
+        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
+        model.load_state_dict(state_dict["state_dict"], strict=False)
+        model.eval()
+        return model
+    else:
+        download_model(path_to_pytorch_model)
 
 def predict(data_to_predict, model):
-    img = data_to_predict[0, :, :]
-    img = torch.from_numpy(np.expand_dims(np.expand_dims(img, 0), 0)).float()
-    logits = model(img)[0]
-    prediction = torch.argmax(logits.squeeze(), dim=0).cpu().detach().numpy().squeeze()
+    imgs = []
+    img = data_to_predict[:, :, :].astype(np.float32)
+    imgs.append(img)
+    imgs = np.asarray(imgs, dtype=np.float32)
+    img_tensor = torch.from_numpy(imgs)
+    prediction = model(img_tensor)
     return prediction
 
 
