@@ -7,11 +7,11 @@ import sys
 import tifffile as tiff
 import torch
 from rich import traceback, print
-from model import model_components
 from torchvision.datasets.utils import download_url
 from urllib.error import URLError
 
-from utils import monte_carlo_dropout_proc
+from model.unet_instance import Unet
+from utils import monte_carlo_dropout_proc, weights_init
 
 WD = os.path.dirname(__file__)
 
@@ -51,7 +51,6 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
             print(f'[bold yellow] Input: {inputs}')
             file_uncert(inputs, model, inputs.replace(input, output).replace(".tif", suffix), mc_dropout_it=iter,
                         ome_out=ome)
-
     else:
         file_uncert(input, model, output, ome_out=ome)
     if sanitize:
@@ -105,35 +104,35 @@ def write_results(results_array: np.ndarray, path_to_write_to) -> None:
     pass
 
 
-def write_ome_out(input_data, results_array, path_to_write_to) -> None:
-    """
-    TODO
-    """
-    os.makedirs(pathlib.Path(path_to_write_to).parent.absolute(), exist_ok=True)
-
-    # print("write_ome_out input: " + str(input_data.shape))
-    # print("write_ome_out output: " + str(results_array.shape))
-
-    full_image = np.zeros((512, 512, 2))
-    full_image[:, :, 0] = input_data[0, :, :]
-    full_image[:, :, 1] = results_array
+def write_ome_out(image, results, out_name) -> None:
+    full_image = np.zeros((256, 256, 4))
+    full_image[:, :, 0] = image[0, :, :]
+    full_image[:, :, 1] = image[1, :, :]
+    full_image[:, :, 2] = image[2, :, :]
+    full_image[:, :, 3] = results
     full_image = np.transpose(full_image, (2, 0, 1))
-    with tiff.TiffWriter(os.path.join(path_to_write_to + ".ome.tif")) as tif_file:
-        tif_file.write(full_image, photometric='minisblack',
-                       metadata={'axes': 'CYX', 'Channel': {'Name': ["image", "uncert_map"]}})
-
-    pass
+    with tiff.TiffWriter(os.path.join(".", out_name), bigtiff=True) as tif_file:
+        metadata = {"axes": "CYX",
+                    'Channel': {"Name": ["red", "green", "blue", "mask"]}}
+        tif_file.write(full_image, photometric="rgb", metadata=metadata)
 
 
 def get_pytorch_model(path_to_pytorch_model: str):
-    """
-    Fetches the model of choice and creates a booster from it.
-    :param path_to_pytorch_model: Path to the Pytorch model1
-    """
-    download(path_to_pytorch_model)
-    model = U2NET.load_from_checkpoint(path_to_pytorch_model, num_classes=5, len_test_set=120, strict=False).to('cpu')
-    model.eval()
-    return model
+    if len(glob.glob(os.getcwd()+path_to_pytorch_model)) > 0:
+        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model.apply(weights_init)
+        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
+        model.load_state_dict(state_dict["state_dict"], strict=False)
+        model.eval()
+        return model
+    else:
+        download(path_to_pytorch_model)
+        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model.apply(weights_init)
+        state_dict = torch.load("model.ckpt", map_location="cpu")
+        model.load_state_dict(state_dict["state_dict"], strict=False)
+        model.eval()
+        return model
 
 
 def _check_exists(filepath) -> bool:
@@ -142,15 +141,13 @@ def _check_exists(filepath) -> bool:
 
 def download(filepath) -> None:
     """Download the model if it doesn't exist in processed_folder already."""
-
     if _check_exists(filepath):
         return
     mirrors = [
         'https://zenodo.org/record/',
     ]
     resources = [
-        ("mark1-PHDFM-u2net-model.ckpt", "6937290/files/mark1-PHDFM-u2net-model.ckpt",
-         "5dd5d425afb4b17444cb31b1343f23dc"),
+        ("model.ckpt", "7650631/files/model.ckpt", "17511a0af673df264179fb93d73c9dd5"),
     ]
     # download files
     for filename, uniqueID, md5 in resources:
