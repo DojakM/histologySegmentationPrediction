@@ -76,10 +76,14 @@ def prediction_std(net, img, t=10):
 
     net.eval()
 
-    img = img[0, :, :]
-    img = torch.from_numpy(np.expand_dims(np.expand_dims(img, 0), 0)).float()
+    imgs = []
+    img = img[:3, :, :].astype(np.float32)
+    imgs.append(img)
+    imgs = np.asarray(imgs, dtype=np.float32)
+    imgs = torch.from_numpy(imgs)
 
-    pred_std = monte_carlo_dropout_proc(net, img, T=t)
+
+    pred_std = monte_carlo_dropout_proc(net, imgs, T=t)
     pred_std = pred_std.detach().cpu().numpy().astype(np.float32)
 
     return pred_std
@@ -129,7 +133,7 @@ def get_pytorch_model(path_to_pytorch_model: str):
         download(path_to_pytorch_model)
         model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
         model.apply(weights_init)
-        state_dict = torch.load("model.ckpt", map_location="cpu")
+        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
         model.load_state_dict(state_dict["state_dict"], strict=False)
         model.eval()
         return model

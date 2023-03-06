@@ -7,33 +7,13 @@ import numpy as np
 
 from alive_progress import alive_bar
 
-def label2rgb(alpha, img, mask):
-    labeled_img = cv2.addWeighted(decode_segmap(mask).transpose(1, 2, 0).astype(int), alpha, img.astype(int), 1 - alpha,
-                                  0)
-    return torch.from_numpy(labeled_img.transpose(2, 0, 1))
-
-
-def decode_segmap(image: np.array, num_classes: int = 5):
-    label_colors = np.array([(255, 255, 255), (128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128)])
-    r = np.zeros_like(image).astype(np.uint8)
-    g = np.zeros_like(image).astype(np.uint8)
-    b = np.zeros_like(image).astype(np.uint8)
-    for cls_idx in range(0, num_classes):
-        idx = image == cls_idx
-        r[idx] = label_colors[cls_idx, 0]
-        g[idx] = label_colors[cls_idx, 1]
-        b[idx] = label_colors[cls_idx, 2]
-    rgb = np.stack([r, g, b], axis=0)
-    return rgb
-
-
 def unnormalize(img, mean=0.6993, std=0.4158):
     img = img * std
     img = img + mean
     return img * 255.0
 
 
-def set_dropout(model, drop_rate=0.5):
+def set_dropout(model, drop_rate):
     for name, child in model.named_children():
         if isinstance(child, torch.nn.Dropout2d):
             child.p = drop_rate
@@ -44,21 +24,15 @@ def standard_prediction(model, X):
     model = model.eval()
     logits = model(Variable(X))[0]
     pred = torch.argmax(logits.squeeze(), dim=0).cpu().detach().float().unsqueeze(0)
-
     return pred
 
 
 def predict_dist(model, X, T=100):
     model = model.train()
-
     softmax_out_stack = []
-
     with alive_bar(T, title=f' MC-Dropout:') as bar:
         for mc_i in range(T):
-            logits = model(Variable(X))[0]
-            softmax_out = F.softmax(logits, dim=1)
-
-            del logits
+            softmax_out = model(Variable(X))[0]
             torch.cuda.empty_cache()
 
             # remove batch dim
