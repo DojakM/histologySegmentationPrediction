@@ -16,7 +16,7 @@ import glob
 WD = os.path.dirname(__file__)
 @click.command()
 @click.option('-i', '--input', required=True, type=str, help='Path to data file to predict.')
-@click.option('--is-dir', required=False, type=bool, help="Allows iterative description")
+@click.option('--is-dir', required=False, type=bool, help="Allows iterative predicition")
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-suf', '--suffix', type=str, help='Path to write the output to')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
