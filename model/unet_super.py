@@ -1,45 +1,39 @@
 import abc
 from argparse import ArgumentParser
-from typing import Any, Optional
-
-import cv2
 import pytorch_lightning as pl
 import torch
-import numpy as np
 
 from losses.FocalLosses import FocalLoss
 
 
 class UnetSuper(pl.LightningModule):
-    def __init__(self, len_test_set: int, hparams, **kwargs):
+    def __init__(self,  hparams, **kwargs):
         super(UnetSuper, self).__init__()
         self.num_classes = kwargs["num_classes"]
         self.metric = iou_fnc
         self.save_hyperparameters(hparams)
         self.args = kwargs
-        self.len_test_set = len_test_set
         if kwargs["flat_weights"]:
             self.weights = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
         else:
-            self.weights = [0.00001, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-        self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2)
+            self.weights = [0.0001, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+        self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
         self.criterion.cuda()
         self._to_console = False
 
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        parser.add_argument('--num_workers', type=int, default=16, metavar='N', help='number of workers (default: 3)')
-        parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
-        parser.add_argument('--gamma-factor', type=float, default=2.0, help='learning rate (default: 0.01)')
-        parser.add_argument('--weight-decay', type=float, default=1e-5, help='learning rate (default: 0.01)')
-        parser.add_argument('--epsilon', type=float, default=1e-16, help='learning rate (default: 0.01)')
-        parser.add_argument('--alpha', type=float, default=1, help='learning rate (default: 0.01)')
-        parser.add_argument('--model', type=str, default="u2net", help='learning rate (default: 0.01)')
+        parser.add_argument('--num_workers', type=int, default=16, metavar='N', help='number of workers (default: 16)')
+        parser.add_argument('--lr', type=float, default=0.003, help='learning rate (default: 0.003)')
+        parser.add_argument('--gamma-factor', type=float, default=2.0, help='gamma factor (default: 2.0)')
+        parser.add_argument('--weight-decay', type=float, default=1e-5, help='weight decay (default: 0.0002)')
+        parser.add_argument('--epsilon', type=float, default=1e-16, help='epsilon (default: 1e-16)')
+        parser.add_argument('--models', type=str, default="unet", help='the wanted model')
         parser.add_argument('--training-batch-size', type=int, default=10, help='Input batch size for training')
-        parser.add_argument('--test-batch-size', type=int, default=500, help='Input batch size for testing')   
+        parser.add_argument('--test-batch-size', type=int, default=500, help='Input batch size for testing')
         parser.add_argument('--dropout-val', type=float, default=0, help='dropout_value for layers')
-        parser.add_argument('--flat-weights', type=bool, default=False, help='set all weights to 0.01')
+        parser.add_argument('--flat-weights', type=bool, default=True, help='set all weights to 0.01')
         return parser
 
     @abc.abstractmethod
@@ -111,7 +105,7 @@ class UnetSuper(pl.LightningModule):
 
     def validation_step(self, test_batch, batch_idx):
         """
-        Predicts on the test dataset to compute the current performance of the model.
+        Predicts on the test dataset to compute the current performance of the models.
         :param test_batch: Batch data
         :param batch_idx: Batch indices
         :return: output - Validation performance
@@ -125,7 +119,7 @@ class UnetSuper(pl.LightningModule):
         for i in range(self.args['num_classes']):
             output['val_iou_' + str(i)] = torch.tensor(iter_iou[i])
             output['val_iou_cnt_' + str(i)] = torch.tensor(iter_count[i])
-        
+
         output['val_loss'] = loss
 
         return output
@@ -231,11 +225,9 @@ class UnetSuper(pl.LightningModule):
         """
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.args['lr'])
         self.scheduler = {'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-6, verbose=True,),
-            'monitor': 'train_avg_loss',}
-
+            self.optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-6, verbose=True, ),
+            'monitor': 'train_avg_loss', }
         return [self.optimizer], [self.scheduler]
-    
 
 def iou_fnc(pred, target, n_classes=7):
     import numpy as np
@@ -259,11 +251,3 @@ def iou_fnc(pred, target, n_classes=7):
             ious.append(float(intersection) / float(max(union, 1)))
 
     return np.array(ious), count
-
-def accuracy():
-    return null
-
-def dice_coefficient(y_true, y_pred):
-    numerator = 2 * tf.reduce_sum(y_true * y_pred)
-    denominator = tf.reduce_sum(y_true + y_pred)
-    return numerator / (denominator + tf.keras.backend.epsilon())
