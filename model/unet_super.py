@@ -7,16 +7,17 @@ from losses.FocalLosses import FocalLoss
 
 
 class UnetSuper(pl.LightningModule):
-    def __init__(self,  hparams, **kwargs):
+    def __init__(self, len_test_set: int, hparams, **kwargs):
         super(UnetSuper, self).__init__()
         self.num_classes = kwargs["num_classes"]
         self.metric = iou_fnc
         self.save_hyperparameters(hparams)
         self.args = kwargs
+        self.len_test_set = len_test_set
         if kwargs["flat_weights"]:
-            self.weights = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+            self.weights = [1, 1, 1, 1, 1, 1, 1]
         else:
-            self.weights = [0.0001, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+            self.weights = [0.001, 1, 1, 1, 1, 1, 1]
         self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
         self.criterion.cuda()
         self._to_console = False
@@ -33,7 +34,7 @@ class UnetSuper(pl.LightningModule):
         parser.add_argument('--training-batch-size', type=int, default=10, help='Input batch size for training')
         parser.add_argument('--test-batch-size', type=int, default=500, help='Input batch size for testing')
         parser.add_argument('--dropout-val', type=float, default=0, help='dropout_value for layers')
-        parser.add_argument('--flat-weights', type=bool, default=True, help='set all weights to 0.01')
+        parser.add_argument('--flat-weights', type=bool, default=False, help='set all weights to 0.01')
         return parser
 
     @abc.abstractmethod

@@ -22,8 +22,8 @@ WD = os.path.dirname(__file__)
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-suf', '--suffix', type=str, help='Path to write the output to')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
-@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False,
-              help='Whether to remove model after prediction or not.')
+@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False, help='Whether to remove model after '
+                                                                                   'prediction or not.')
 @click.option('-m', '--model', type=str, default="models/model.ckpt", help="Path to model")
 @click.option('-h', '--ome', type=bool, default=False,
               help='human readable output (OME-TIFF format), input and output as image channels')
