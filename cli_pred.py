@@ -20,12 +20,12 @@ WD = os.path.dirname(__file__)
 @click.option('-i', '--input', required=True, type=str, help='Path to data file to predict.')
 @click.option('--is-dir', required=False, type=bool, help="Allows iterative predicition")
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
-@click.option('-suf', '--suffix', type=str, help='Path to write the output to')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
-@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False, help='Whether to remove model after '
+@click.option('-suf', '--suffix', default=".", type=str, help='Path to write the output to')
+@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=True, help='Whether to remove model after '
                                                                                    'prediction or not.')
 @click.option('-m', '--model', type=str, default="models/model.ckpt", help="Path to model")
-@click.option('-h', '--ome', type=bool, default=False,
+@click.option('-h', '--ome', type=bool, default=True,
               help='human readable output (OME-TIFF format), input and output as image channels')
 def main(input: str, suffix: str, cuda: bool, output: str, ome: bool, is_dir: bool, sanitize: bool, model: str):
     model = get_pytorch_model(model, sanitize)
@@ -118,10 +118,9 @@ def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool):
     if path_to_pytorch_model == "models/model.ckpt":
         if not _check_exists(os.getcwd() + "/models/model.ckpt"):
             download("models/model.ckpt")
-    path = path_to_pytorch_model
     model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
     model.apply(weights_init)
-    state_dict = torch.load(path, map_location="cpu")
+    state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
     model.load_state_dict(state_dict["state_dict"], strict=False)
     model.eval()
     if sanitize:

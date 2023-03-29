@@ -23,7 +23,7 @@ WD = os.path.dirname(__file__)
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False,
               help='Whether to remove model after prediction or not.')
-@click.option('-suf', '--suffix', type=str, help='Path to write the output to')
+@click.option('-suf', '--suffix', default=".", type=str, help='Path to write the output to')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
 @click.option('-t', '--iter', default=10, required=True, type=int, help='Number of MC-Dropout interations')
 @click.option('-h', '--ome', type=bool, default=False,
@@ -37,7 +37,7 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
 
     print('[bold blue]Run [green]rts-pred-uncert --help [blue]for an overview of all commands\n')
     if not model:
-        model = get_pytorch_model(os.path.join(f'{os.getcwd()}', "models", "models/model.ckpt"))
+        model = get_pytorch_model(os.path.join(f'{os.getcwd()}', "models", "model.ckpt"))
     else:
         model = get_pytorch_model(model)
     if cuda:
@@ -56,7 +56,6 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
     if sanitize:
         os.remove(os.path.join(f'{WD}', "models", "models/model.ckpt"))
 
-
 def file_uncert(input, model, output, mc_dropout_it=10, ome_out=False):
     input_data = read_input_data(input)
     pred_std = prediction_std(model, input_data, t=mc_dropout_it)
@@ -68,11 +67,7 @@ def file_uncert(input, model, output, mc_dropout_it=10, ome_out=False):
         print(f'[bold green] Output: {output}_uncert_.npy')
         write_results(pred_std, output + "_uncert_")
 
-
 def prediction_std(net, img, t=10):
-    """
-    TODO
-    """
     net.eval()
     imgs = []
     img = img[:3, :, :].astype(np.float32)
@@ -84,14 +79,12 @@ def prediction_std(net, img, t=10):
 
     return pred_std
 
-
 def read_input_data(path_to_input_data: str):
     """
     Reads the data of an input image
     :param path_to_input_data: Path to the input data file
     """
     return tiff.imread(path_to_input_data)
-
 
 def write_results(results_array: np.ndarray, path_to_write_to) -> None:
     """
@@ -102,7 +95,6 @@ def write_results(results_array: np.ndarray, path_to_write_to) -> None:
     os.makedirs(pathlib.Path(path_to_write_to).parent.absolute(), exist_ok=True)
     np.save(path_to_write_to, results_array)
     pass
-
 
 def write_ome_out(image, results, out_name) -> None:
     full_image = np.zeros((256, 256, 4))
@@ -116,28 +108,19 @@ def write_ome_out(image, results, out_name) -> None:
                     'Channel': {"Name": ["red", "green", "blue", "mask"]}}
         tif_file.write(full_image, photometric="rgb", metadata=metadata)
 
-
 def get_pytorch_model(path_to_pytorch_model: str):
-    if len(glob.glob(os.getcwd()+path_to_pytorch_model)) > 0:
-        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
-        model.apply(weights_init)
-        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
-        model.load_state_dict(state_dict["state_dict"], strict=False)
-        model.eval()
-        return model
-    else:
-        download(path_to_pytorch_model)
-        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
-        model.apply(weights_init)
-        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
-        model.load_state_dict(state_dict["state_dict"], strict=False)
-        model.eval()
-        return model
-
+    if path_to_pytorch_model == "models/model.ckpt":
+        if not _check_exists(os.getcwd() + "/models/model.ckpt"):
+            download("models/model.ckpt")
+    model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+    model.apply(weights_init)
+    state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
+    model.load_state_dict(state_dict["state_dict"], strict=False)
+    model.eval()
+    return model
 
 def _check_exists(filepath) -> bool:
     return os.path.exists(filepath)
-
 
 def download(filepath) -> None:
     """Download the model if it doesn't exist in processed_folder already."""
@@ -171,7 +154,6 @@ def download(filepath) -> None:
         else:
             raise RuntimeError("Error downloading {}".format(filename))
     print('Done!')
-
 
 if __name__ == "__main__":
     traceback.install()
