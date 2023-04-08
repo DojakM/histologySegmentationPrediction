@@ -7,13 +7,15 @@ from losses.FocalLosses import FocalLoss
 
 
 class UnetSuper(pl.LightningModule):
-    def __init__(self, len_test_set: int, hparams, **kwargs):
+    """UnetSuper is a basic implementation of the LightningModule without any ANN modules
+    It is a parent class which should not be used directly
+    """
+    def __init__(self, hparams, **kwargs):
         super(UnetSuper, self).__init__()
         self.num_classes = kwargs["num_classes"]
         self.metric = iou_fnc
         self.save_hyperparameters(hparams)
         self.args = kwargs
-        self.len_test_set = len_test_set
         if kwargs["flat_weights"]:
             self.weights = [1, 1, 1, 1, 1, 1, 1]
         else:

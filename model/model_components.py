@@ -4,8 +4,25 @@ import torch.nn.functional as F
 
 
 #### ===== basic Unet ===== ####
+# These modules are the building blocks for the U-Net architecture derived from
+# https://arxiv.org/pdf/1505.04597
+# With slight alteration
 class UnetConv(nn.Module):
-    def __init__(self, in_size, out_size, is_batchnorm, ks=3, stride=1, padding=1, gpus=False, dropout_val=0.001):
+    """
+    UnetConv is a standard U-Net convolution block with 2 convolution layers, seperated by ReLu and Dropout Layers
+
+    in_size: channel dimension of input
+    out_size: channel dimension of output
+    is_batchnorm: boolean option, whether a batchnorm layer is added or not
+    ks: kernel size normally 3
+    stride: stride of convolution, should stay 1
+    padding: padding of convolution, needs to be 1 to keep dimensions
+    gpus: whether gpus are used for implementation. Currently only on Linux!
+    dropout_val: p of dropout layer. 0 will mean input=output
+    """
+
+    def __init__(self, in_size: int, out_size: int, is_batchnorm: bool, ks=3, stride=1, padding=1, gpus=False,
+                 dropout_val=0.001):
         super(UnetConv, self).__init__()
         self.ks = ks
         self.stride = stride
@@ -38,7 +55,19 @@ class UnetConv(nn.Module):
 
 
 class UnetUp(nn.Module):
-    def __init__(self, in_size, out_size, is_deconv, gpus=False, dropout_val=0):
+    """
+    UnetUp is a upsampling layer with a 1x1 Convolution and a prepended dropout layer
+
+    in_size: channel dimension of input
+    out_size: channel dimension of output
+    ks: kernel size normally 3
+    stride: stride of convolution, should stay 1
+    padding: padding of convolution, needs to be 1 to keep dimensions
+    gpus: whether gpus are used for implementation. Currently only on Linux!
+    dropout_val: p of dropout layer. 0 will mean input=output
+    """
+
+    def __init__(self, in_size: int, out_size: int, gpus: bool = False, dropout_val: float = 0.0):
         super(UnetUp, self).__init__()
         self.conv = UnetConv(in_size, out_size, False)
         self.up = nn.Sequential(
@@ -58,8 +87,22 @@ class UnetUp(nn.Module):
 
 
 #### ===== Context Unet ===== #####
+# These modules are derived from
+# https://arxiv.org/abs/1802.10508
 class SimpleUnetConv(nn.Module):
-    def __init__(self, in_size, out_size, ks=3, stride=2, padding=1, gpus=False, dropout_val=0.001):
+    """SimpleUnetConv is a one layer Convolution layer
+
+    in_size: channel dimension of input
+    out_size: channel dimension of output
+    is_batchnorm: boolean option, whether a batchnorm layer is added or not
+    ks: kernel size normally 3
+    stride: stride of convolution, should stay 1
+    padding: padding of convolution, needs to be 1 to keep dimensions
+    gpus: whether gpus are used for implementation. Currently only on Linux!
+    dropout_val: p of dropout layer. 0 will mean input=output
+    """
+    def __init__(self, in_size:int, out_size:int, ks:int=3, stride:int=2, padding:int=1, gpus:bool=False,
+                 dropout_val:float=0):
         super(SimpleUnetConv, self).__init__()
         self.ks = ks
         self.stride = stride
@@ -78,6 +121,12 @@ class SimpleUnetConv(nn.Module):
 
 
 class SimpleUnetUp(nn.Module):
+    """SimpleUnetUp is a upsampling module without dropout layer
+
+    in_size: channel dimension of input
+    out_size: channel dimension of output
+    gpus: whether gpus are used for implementation. Currently only on Linux!
+    """
     def __init__(self, in_size, out_size, gpus=False):
         super(SimpleUnetUp, self).__init__()
         self.up = nn.Sequential(
@@ -92,6 +141,12 @@ class SimpleUnetUp(nn.Module):
 
 
 class ContextModule(nn.Module):
+    """ContextModule is a double convolution layer with a dropout layer of 0.3 inbetween
+
+        in_size: channel dimension of input
+        out_size: channel dimension of output
+        gpus: whether gpus are used for implementation. Currently only on Linux!
+        """
     def __init__(self, in_size, out_size, gpus=False):
         super(ContextModule, self).__init__()
         self.conv = nn.Sequential(
@@ -110,7 +165,14 @@ class ContextModule(nn.Module):
 
 
 class Localization(nn.Module):
-    def __init__(self, in_size, out_size, dropout_val=0, gpus = False):
+    """Localization is a Module with a different order of layers to the standard convolution layer
+
+    in_size: channel dimension of input
+    out_size: channel dimension of output
+    gpus: whether gpus are used for implementation. Currently only on Linux!
+    dropout_val: p of dropout layer. 0 will mean input=output
+    """
+    def __init__(self, in_size, out_size, dropout_val=0, gpus=False):
         super(Localization, self).__init__()
         self.conv = nn.Sequential(nn.Sequential(
             nn.Dropout(dropout_val),
@@ -127,7 +189,14 @@ class Localization(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 class SegmentationLayer(nn.Module):
+    """SegmentationLayer is a Module which takes different level of feature maps and sum-wise adds them together
+
+    x_size: size of the channel dimension of the lowest level of feature map
+    y_size: size of the channel dimension of the second lowest level of feature map
+    z_size: size of the channel dimension of the last feature map
+    """
     def __init__(self, x_size, y_size, z_zize, gpus=False):
         super(SegmentationLayer, self).__init__()
         self.conv1 = nn.Conv2d(in_channels=x_size, out_channels=x_size, kernel_size=1)
@@ -147,10 +216,10 @@ class SegmentationLayer(nn.Module):
         return self.up2(comb) + z
 
 
-
-
-#### ==== Spatial Transformer kinda doesn't do anything ==== ####
+#### ==== Spatial Transformer U-Net ==== ####
+# This module does not work as intended
 class SPTnet(nn.Module):
+    """SPTnet is a module which is supposed to allow a spatial invariant convolution"""
     def __init__(self, in_size, out_size, val, stride=1, ks=3, dropout_val=0, gpus=False):
         super(SPTnet, self).__init__()
 

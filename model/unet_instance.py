@@ -2,24 +2,27 @@ from model.model_components import *
 from model.unet_super import UnetSuper
 from utils import weights_init
 
-
 class Unet(UnetSuper):
-    def __init__(self, len_test_set, hparams, input_channels, is_deconv=True,
-                 is_batchnorm=True, on_gpu=False, **kwargs):
-        super().__init__(len_test_set=len_test_set, hparams=hparams, **kwargs)
+    """Unet
+
+    Basic Unet which is used for medical image segmentation and classification
+    original paper: https://arxiv.org/pdf/1505.04597
+    """
+    def __init__(self, hparams, input_channels, is_deconv=True, is_batchnorm=True, on_gpu=False, **kwargs):
+        super().__init__( hparams=hparams, **kwargs)
         self.in_channels = input_channels
         self.is_deconv = is_deconv
         self.is_batchnorm = is_batchnorm
         self.input = input_channels
         filters = [32, 64, 128, 256]
-        self.conv1 = UnetConv(self.in_channels, filters[0], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.conv2 = UnetConv(filters[0], filters[1], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.conv3 = UnetConv(filters[1], filters[2], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.center = UnetConv(filters[2], filters[3], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv1 = UnetConv(self.in_channels, filters[0], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv2 = UnetConv(filters[0], filters[1], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv3 = UnetConv(filters[1], filters[2], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.center = UnetConv(filters[2], filters[3], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         # upsampling
-        self.up_concat3 = UnetUp(filters[3], filters[2], False, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.up_concat2 = UnetUp(filters[2], filters[1], False, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.up_concat1 = UnetUp(filters[1], filters[0], False, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat3 = UnetUp(filters[3], filters[2], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat2 = UnetUp(filters[2], filters[1], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat1 = UnetUp(filters[1], filters[0], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         # final conv (without any concat)
         self.final = nn.Conv2d(filters[0], kwargs["num_classes"], 1)
         if on_gpu:
@@ -54,23 +57,27 @@ class Unet(UnetSuper):
         finalize = nn.functional.softmax(final, dim=1)
         return finalize
 
+
     def print(self, args: torch.Tensor) -> None:
         print(args)
 
-
 #### ==== model with spatial transformer ==== ####
 class RTUnet(UnetSuper):
-    def __init__(self, len_test_set, hparams, input_channels, is_deconv=True,
-                 is_batchnorm=True, on_gpu=False, **kwargs):
-        super().__init__(len_test_set=len_test_set, hparams=hparams, **kwargs)
+    """RTUnet
+
+    A Unet with a spatial transformer network at the beginning
+    Does not produce intended outcome
+    """
+    def __init__(self, hparams, input_channels, is_deconv=True, is_batchnorm=True, on_gpu=False, **kwargs):
+        super().__init__(hparams=hparams, **kwargs)
         self.in_channels = input_channels
         self.is_deconv = is_deconv
         self.is_batchnorm = is_batchnorm
         self.input = input_channels
         filters = [8, 16, 32, 64]
 
-        self.conv1 = SPTnet(self.in_channels, filters[0], 32, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.conv2 = UnetConv(filters[0], filters[1], 16, True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv1 = SPTnet(self.in_channels, filters[0], 32,  gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv2 = UnetConv(filters[0], filters[1], 16,  True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         self.center = UnetConv(filters[1], filters[2], 8, True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         # upsampling
         self.up_concat3 = UnetUp(filters[3], filters[2], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
@@ -109,7 +116,6 @@ class RTUnet(UnetSuper):
 
                 center = self.center(maxpool2)
 
-                # up3 = self.up_concat3(center, conv2)  # 64*16*16
                 up2 = self.up_concat2(center, conv2)  # 32*32*32
                 up1 = self.up_concat1(up2, conv1)  # 16*64*64
 
@@ -120,24 +126,29 @@ class RTUnet(UnetSuper):
         return torch.cat(merge_x, 2)
 
 
+
 #### ==== Context Unet ==== ####
 class ContextUnet(UnetSuper):
-    def __init__(self, len_test_set, hparams, input_channels, is_deconv=True,
-                 is_batchnorm=True, on_gpu=False, deep_supervision=True, **kwargs):
-        super().__init__(len_test_set=len_test_set, hparams=hparams, **kwargs)
+    """Context Unet is a U-Net with added context modules and localization modules and a different way of generating
+    the higher dimension feature maps. Additionally deep_supervision elements are present, however not meaningfully
+    better
+
+    """
+    def __init__(self, hparams, input_channels, is_deconv=True, is_batchnorm=True, on_gpu=False,
+                 deep_supervision=True, **kwargs):
+        super().__init__(hparams=hparams, **kwargs)
         self.deep_supervision = deep_supervision
         self.in_channels = input_channels
         self.is_deconv = is_deconv
         self.is_batchnorm = is_batchnorm
         self.input = input_channels
         filters = [16, 32, 64, 128, 256]
-        self.conv1 = SimpleUnetConv(self.in_channels, filters[0], stride=1, gpus=on_gpu,
-                                    dropout_val=kwargs["dropout_val"])
-        self.context1 = ContextModule(filters[0], filters[0], gpus=on_gpu)
+        self.conv1 = SimpleUnetConv(self.in_channels, filters[0], stride=1, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.context1 = ContextModule(filters[0], filters[0],gpus=on_gpu)
         self.ttt2 = SimpleUnetConv(filters[0], filters[1], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         self.context2 = ContextModule(filters[1], filters[1], gpus=on_gpu)
         self.ttt3 = SimpleUnetConv(filters[1], filters[2], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.context3 = ContextModule(filters[2], filters[2], gpus=on_gpu)
+        self.context3 = ContextModule(filters[2], filters[2],  gpus=on_gpu)
         self.ttt4 = SimpleUnetConv(filters[2], filters[3], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         self.context4 = ContextModule(filters[3], filters[3], gpus=on_gpu)
         self.up_center = SimpleUnetUp(filters[3], filters[2], gpus=on_gpu)
@@ -165,37 +176,36 @@ class ContextUnet(UnetSuper):
             self.final.cuda()
 
     def forward(self, x):
-        # x     3*256*256
-        con1 = self.conv1(x)  # 16*256*256
+        con1 = self.conv1(x) # 16*256*256
         son1 = self.context1(con1)
         plus1 = con1 + son1
 
-        con2 = self.ttt2(plus1)  # 32*128*128
+        con2 = self.ttt2(plus1) # 32*128*128
         son2 = self.context2(con2)
         plus2 = con2 + son2
 
-        con3 = self.ttt3(plus2)  # 64*64*64
+        con3 = self.ttt3(plus2) # 64*64*64
         son3 = self.context3(con3)
-        plus3 = con3 + son3
+        plus3 = con3+son3
 
-        con4 = self.ttt4(plus3)  # 128*32*32
+        con4 = self.ttt4(plus3) # 128*32*32
         son4 = self.context4(con4)
         plus4 = con4 + son4
 
-        up_center = self.up_center(plus4)  # 64*64*64
+        up_center = self.up_center(plus4) #64*64*64
 
-        comb = torch.cat([plus3, up_center], dim=1)  # 128*64*64
-        local1 = self.local1(comb)  # 64*64*64
-        up1 = self.up1(local1)  # 32*128*128
+        comb = torch.cat([plus3, up_center], dim=1) #128*64*64
+        local1 = self.local1(comb) #64*64*64
+        up1 = self.up1(local1) #32*128*128
 
-        comb = torch.cat([plus2, up1], dim=1)  # 64*128*128
-        local2 = self.local2(comb)  # 32*128*128
-        up2 = self.up2(local2)  # 16*256*256
+        comb = torch.cat([plus2, up1], dim=1) #64*128*128
+        local2 = self.local2(comb) #32*128*128
+        up2 = self.up2(local2) #16*256*256
 
-        comb = torch.cat([plus1, up2], dim=1)  # 32*256*256
-        final = self.final(comb)  # 7*256*256
+        comb = torch.cat([plus1, up2], dim=1) #32*256*256
+        final = self.final(comb)  #7*256*256
 
         if self.deep_supervision:
             final = self.seg(local1, local2, final)
 
-        return nn.functional.softmax(final, dim=1)  # 1*256*256
+        return nn.functional.softmax(final, dim=1) #1*256*256
