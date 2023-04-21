@@ -1,44 +1,90 @@
+import multiprocessing
+
 import numpy as np
 import cli_pred as cp
 import tifffile as tiff
 import glob
+from multiprocessing import Process
 
 
 class PQCalculator:
     def __init__(self, ids):
-        self.qualities = []
-        self.metrics = []
+        self.ids = ids
+        self.length = len(ids)
         self.labels = list(range(0, 256 ** 2, 1))
-        for val, iD in enumerate(ids):
+
+    def calc_cod(self, cl):
+        res = []
+        lab = []
+        for val in self.ids:
             image, label = cp.read_data_to_predict(glob.glob(
-                "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[iD])
+                "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[val])
             model = cp.get_pytorch_model("models/model.ckpt", False)
             result = cp.predict(image, model)
-            result = result.detach().numpy()
-            print("Done: {:.3f} percent".format((val+1)/len(ids)*100))
-            metrics = self.intersection_two_instances(self.nb_4_tiles(label), self.nb_4_tiles(np.argmax(result,
-                                                                                                        axis=1)[0]))
+            result = np.argmax(result.detach().numpy(), axis=1)
+            label = label[16:240, 16:240]
+            result = result[0, 16:240, 16:240]
+            if cl > 0:
+                mask = result == cl
+                result = mask * result
+                mask = label == cl
+                label = mask * label
+            print(len(np.unique(self.nb_4_tiles(result))))
+            res.append(len(np.unique(self.nb_4_tiles(result))))
+            lab.append(len(np.unique(self.nb_4_tiles(label))))
+        return res, lab
 
-            try:
-                sq = metrics[2] / metrics[0]
-                rq = metrics[0] / (metrics[0] + 0.5 * metrics[1] + 0.5 * metrics[3])
-            except:
-                sq = 0
-                rq = 0
-            self.metrics.append(metrics)
-            self.qualities.append(sq * rq)
-        self.qualities = np.array(self.qualities)
-        self.metrics = np.array(self.metrics)
+    def calc_PQ(self, cl):
+        with multiprocessing.Manager() as manager:
+            qL = manager.list()
+            mL = manager.list()
+            for val in range(0, self.length - 4, 4):
+                p1 = Process(target=self.process_pipeline, args=(val, self.ids[val], cl, qL, mL))
+                p2 = Process(target=self.process_pipeline, args=(val + 1, self.ids[val + 1], cl, qL, mL))
+                p3 = Process(target=self.process_pipeline, args=(val + 2, self.ids[val + 2], cl, qL, mL))
+                p4 = Process(target=self.process_pipeline, args=(val + 3, self.ids[val + 3], cl, qL, mL))
+                p1.start()
+                p2.start()
+                p3.start()
+                p4.start()
+                p1.join()
+                p2.join()
+                p3.join()
+                p4.join()
+            qual = list(qL)
+            mets = list(mL)
+        self.qs = np.array(qual)
+        self.mets = np.array(mets)
 
-    def load_image(self, path, mask: bool, masks=None):
+    def load_image(self, path, mask: bool):
         data = tiff.imread(path)
-        #data = data.transpose(2, 1, 0)
         label = data[3, :, :]
         image = data[:3, :, :]
         if mask:
             return label
-        return (image, label)
+        return image, label
 
+    def process_pipeline(self, iD, val, cl, qL, mL):
+        image, label = cp.read_data_to_predict(glob.glob(
+            "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[iD])
+        model = cp.get_pytorch_model("models/model.ckpt", False)
+        result = cp.predict(image, model)
+        result = np.argmax(result.detach().numpy(), axis=1)
+        if cl > 0:
+            mask = result == cl
+            result = mask * result
+            mask = label == cl
+            label = mask * label
+        print("Currently working on {}".format(val))
+        metrics = self.intersection_two_instances(self.nb_4_tiles(label), self.nb_4_tiles(result))
+        try:
+            sq = metrics[2] / metrics[0]
+            rq = metrics[0] / (metrics[0] + 0.5 * metrics[1] + 0.5 * metrics[3])
+        except:
+            sq = 0
+            rq = 0
+        mL.append(metrics)
+        qL.append([sq, rq])
 
     def union(self, x, y):
         x = int(x)
@@ -94,17 +140,21 @@ class PQCalculator:
                 bool_val = ground_truth == value
                 bool_sal = mask == salue
                 intersection = np.logical_and(bool_val, bool_sal)
-                if True not in intersection:
+                if not intersection.sum() > 0:
                     continue
                 else:
-                    intersection = np.unique(intersection, return_counts=True)[1][1]
+                    intersection = intersection.sum()
                     union = np.logical_or(bool_val, bool_sal)
-                    union = np.unique(union, return_counts=True)[1][1]
-                    if intersection/union > 0.5:
+                    union = union.sum()
+                    if intersection / union > 0.5:
                         tp += 1
-                        tp_ious += intersection/union
+                        tp_ious += (intersection / union)
                         if value in fns:
                             fns.remove(value)
+                    elif intersection / union > 1:
+                        print(intersection)
+                        print(union)
+                        continue
                     else:
                         fp += 1
                         if value in fns:
@@ -156,5 +206,12 @@ if __name__ == '__main__':
                3918, 4515, 2518, 4977, 1438, 2042, 1926, 2002, 624, 3338, 2373, 378, 3296, 1961, 2587, 376, 708, 3740,
                4049, 4114, 287, 3269, 4544, 1413, 4347, 2402]
     pqc = PQCalculator(test_id)
-    np.save("qualities.np", pqc.qualities)
-    np.save("metrics.np", pqc.metrics)
+
+    for i in range(1, 7):
+        res, lab = pqc.calc_cod(i)
+        np.save("res_{}".format(i), np.array(res))
+        np.save("lab_{}".format(i), np.array(lab))
+        print("Done with class {}".format(i))
+    #    pqc.calc_PQ(i)
+    #    np.save("qualities_{}".format(i), pqc.qs)
+    #    np.save("metrics_{}".format(i), pqc.mets)
