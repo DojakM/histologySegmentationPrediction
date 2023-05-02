@@ -6,7 +6,6 @@ import tifffile as tiff
 import glob
 from multiprocessing import Process
 
-
 class PQCalculator:
     def __init__(self, ids):
         self.ids = ids
@@ -19,7 +18,7 @@ class PQCalculator:
         for val in self.ids:
             image, label = cp.read_data_to_predict(glob.glob(
                 "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[val])
-            model = cp.get_pytorch_model("models/model.ckpt", False)
+            model = cp.get_pytorch_model("models/CU_NET.ckpt", False)
             result = cp.predict(image, model)
             result = np.argmax(result.detach().numpy(), axis=1)
             label = label[16:240, 16:240]
@@ -67,7 +66,7 @@ class PQCalculator:
     def process_pipeline(self, iD, val, cl, qL, mL):
         image, label = cp.read_data_to_predict(glob.glob(
             "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[iD])
-        model = cp.get_pytorch_model("models/model.ckpt", False)
+        model = cp.get_pytorch_model("CU_NET.ckpt", False)
         result = cp.predict(image, model)
         result = np.argmax(result.detach().numpy(), axis=1)
         if cl > 0:
@@ -208,10 +207,9 @@ if __name__ == '__main__':
     pqc = PQCalculator(test_id)
 
     for i in range(1, 7):
-        res, lab = pqc.calc_cod(i)
-        np.save("res_{}".format(i), np.array(res))
-        np.save("lab_{}".format(i), np.array(lab))
-        print("Done with class {}".format(i))
-    #    pqc.calc_PQ(i)
-    #    np.save("qualities_{}".format(i), pqc.qs)
-    #    np.save("metrics_{}".format(i), pqc.mets)
+    #    res, lab = pqc.calc_cod(i)
+    #    np.save("res_{}".format(i), np.array(res))
+    #    np.save("lab_{}".format(i), np.array(lab))
+        pqc.calc_PQ(i)
+        np.save("qualities_c_{}".format(i), pqc.qs)
+        np.save("metrics_c_{}".format(i), pqc.mets)

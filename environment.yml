@@ -1,0 +1,15 @@
+name: seg_prediction
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - alive_progress==3.0.1
+  - click==8.0.4
+  - matplotlib==3.7.1
+  - numpy==1.23.5
+  - pytorch_lightning==1.9.0
+  - rich==13.3.5
+  - tifffile==2023.2.3
+  - torch==1.13.1
+  - torchvision==0.14.1

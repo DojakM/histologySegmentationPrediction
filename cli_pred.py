@@ -9,7 +9,7 @@ import sys
 import tifffile as tiff
 import torch
 from rich import traceback
-from model.unet_instance import Unet
+from model.unet_instance import Unet, ContextUnet
 from utils import weights_init
 import glob
 
@@ -24,11 +24,13 @@ WD = os.path.dirname(__file__)
 @click.option('-suf', '--suffix', default=".", type=str, help='Path to write the output to')
 @click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=True, help='Whether to remove model after '
                                                                                    'prediction or not.')
-@click.option('-m', '--model', type=str, default="models/model.ckpt", help="Path to model")
+@click.option('-m', '--model', type=str, default="models/U_NET.ckpt", help="Path to model")
+@click.option('--architecture', type=str, default="U-Net", help="U-Net or CU-Net")
 @click.option('-h', '--ome', type=bool, default=True,
               help='human readable output (OME-TIFF format), input and output as image channels')
-def main(input: str, suffix: str, cuda: bool, output: str, ome: bool, is_dir: bool, sanitize: bool, model: str):
-    model = get_pytorch_model(model, sanitize)
+def main(input: str, suffix: str, cuda: bool, output: str, ome: bool, is_dir: bool, sanitize: bool, model: str,
+         architecture: str):
+    model = get_pytorch_model(model, sanitize, architecture)
     if cuda:
         model.cuda()
     if is_dir:
@@ -57,16 +59,21 @@ def _check_exists(filepath) -> bool:
     return os.path.exists(filepath)
 
 
-def download(filepath) -> None:
+def download(architecture) -> None:
     """Download the model if it doesn't exist in processed_folder already."""
-    if _check_exists(filepath):
-        return
     mirrors = [
         'https://zenodo.org/record/',
     ]
-    resources = [
-        ("model.ckpt", "7650631/files/model.ckpt", "17511a0af673df264179fb93d73c9dd5"),
-    ]
+    if architecture == "U-Net":
+        resources = [
+            ("U_NET.ckpt", "7884684/files/U_NET.ckpt", "17511a0af673df264179fb93d73c9dd5"),
+        ]
+    elif architecture == "CU-Net":
+        resources = [
+            ("CU_NET.ckpt", "7884684/files/CU_NET.ckpt", "9090252a639c39c9f9509df7e1ce311c"),
+        ]
+    else:
+        raise IOError("No architecture found")
     # download files
     for filename, uniqueID, md5 in resources:
         for mirror in mirrors:
@@ -74,7 +81,7 @@ def download(filepath) -> None:
             try:
                 print("Downloading {}".format(url))
                 download_url(
-                    url, root=str(pathlib.Path(filepath).parent.absolute()),
+                    url, root=str(pathlib.Path("models/" + architecture).parent.absolute()),
                     filename=filename,
                     md5=md5
                 )
@@ -114,17 +121,23 @@ def mask_binning(classification: torch.Tensor):
     return classification
 
 
-def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool):
-    if path_to_pytorch_model == "models/model.ckpt":
-        if not _check_exists(os.getcwd() + "/models/model.ckpt"):
-            download("models/model.ckpt")
-    model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
-    model.apply(weights_init)
-    state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
+def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: str):
+    if not _check_exists(path_to_pytorch_model):
+        download(architecture)
+    if architecture == "U-Net":
+        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model.apply(weights_init)
+        state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
+    elif architecture == "CU-Net":
+        model = ContextUnet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model.apply(weights_init)
+        state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
+    else:
+        raise KeyError("Architecture not available")
     model.load_state_dict(state_dict["state_dict"], strict=False)
     model.eval()
     if sanitize:
-        os.remove("models/model.ckpt")
+        os.remove(path_to_pytorch_model)
     return model
 
 

@@ -37,7 +37,7 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
 
     print('[bold blue]Run [green]rts-pred-uncert --help [blue]for an overview of all commands\n')
     if not model:
-        model = get_pytorch_model(os.path.join(f'{os.getcwd()}', "models", "model.ckpt"))
+        model = get_pytorch_model(os.path.join(f'{os.getcwd()}', "models", "U_NET.ckpt"))
     else:
         model = get_pytorch_model(model)
     if cuda:
@@ -54,7 +54,7 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
     else:
         file_uncert(input, model, output, ome_out=ome)
     if sanitize:
-        os.remove(os.path.join(f'{WD}', "models", "models/model.ckpt"))
+        os.remove(os.path.join(f'{WD}', "models", "models/U_NET.ckpt"))
 
 def file_uncert(input, model, output, mc_dropout_it=10, ome_out=False):
     input_data = read_input_data(input)
@@ -109,9 +109,9 @@ def write_ome_out(image, results, out_name) -> None:
         tif_file.write(full_image, photometric="rgb", metadata=metadata)
 
 def get_pytorch_model(path_to_pytorch_model: str):
-    if path_to_pytorch_model == "models/model.ckpt":
-        if not _check_exists(os.getcwd() + "/models/model.ckpt"):
-            download("models/model.ckpt")
+    if path_to_pytorch_model == "models/U_NET.ckpt":
+        if not _check_exists(os.getcwd() + "/models/U_NET.ckpt"):
+            download("models/U_NET.ckpt")
     model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
     model.apply(weights_init)
     state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
@@ -130,7 +130,7 @@ def download(filepath) -> None:
         'https://zenodo.org/record/',
     ]
     resources = [
-        ("model.ckpt", "7650631/files/model.ckpt", "17511a0af673df264179fb93d73c9dd5"),
+        ("U_NET.ckpt", "7650631/files/U_NET.ckpt", "17511a0af673df264179fb93d73c9dd5"),
     ]
     # download files
     for filename, uniqueID, md5 in resources:
