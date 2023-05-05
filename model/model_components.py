@@ -101,8 +101,9 @@ class SimpleUnetConv(nn.Module):
     gpus: whether gpus are used for implementation. Currently only on Linux!
     dropout_val: p of dropout layer. 0 will mean input=output
     """
-    def __init__(self, in_size:int, out_size:int, ks:int=3, stride:int=2, padding:int=1, gpus:bool=False,
-                 dropout_val:float=0):
+
+    def __init__(self, in_size: int, out_size: int, ks: int = 3, stride: int = 2, padding: int = 1, gpus: bool = False,
+                 dropout_val: float = 0):
         super(SimpleUnetConv, self).__init__()
         self.ks = ks
         self.stride = stride
@@ -127,6 +128,7 @@ class SimpleUnetUp(nn.Module):
     out_size: channel dimension of output
     gpus: whether gpus are used for implementation. Currently only on Linux!
     """
+
     def __init__(self, in_size, out_size, gpus=False):
         super(SimpleUnetUp, self).__init__()
         self.up = nn.Sequential(
@@ -147,6 +149,7 @@ class ContextModule(nn.Module):
         out_size: channel dimension of output
         gpus: whether gpus are used for implementation. Currently only on Linux!
         """
+
     def __init__(self, in_size, out_size, gpus=False):
         super(ContextModule, self).__init__()
         self.conv = nn.Sequential(
@@ -172,6 +175,7 @@ class Localization(nn.Module):
     gpus: whether gpus are used for implementation. Currently only on Linux!
     dropout_val: p of dropout layer. 0 will mean input=output
     """
+
     def __init__(self, in_size, out_size, dropout_val=0, gpus=False):
         super(Localization, self).__init__()
         self.conv = nn.Sequential(nn.Sequential(
@@ -197,6 +201,7 @@ class SegmentationLayer(nn.Module):
     y_size: size of the channel dimension of the second lowest level of feature map
     z_size: size of the channel dimension of the last feature map
     """
+
     def __init__(self, x_size, y_size, z_zize, gpus=False):
         super(SegmentationLayer, self).__init__()
         self.conv1 = nn.Conv2d(in_channels=x_size, out_channels=x_size, kernel_size=1)
@@ -220,8 +225,10 @@ class SegmentationLayer(nn.Module):
 # This module does not work as intended
 class SPTnet(nn.Module):
     """SPTnet is a module which is supposed to allow a spatial invariant convolution"""
+
     def __init__(self, in_size, out_size, val, stride=1, ks=3, dropout_val=0, gpus=False):
         super(SPTnet, self).__init__()
+        self.gpus = gpus
 
         self.conv = nn.Sequential(nn.Sequential(
             nn.Dropout(dropout_val),
@@ -260,7 +267,10 @@ class SPTnet(nn.Module):
         return x, theta
 
     def rev_stn(self, x, theta: torch.tensor):
-        empty_tensor = torch.empty(theta.size()).cuda()
+        if self.gpus:
+            empty_tensor = torch.empty(theta.size()).cuda()
+        else:
+            empty_tensor = torch.empty(theta.size())
         for val, batch in enumerate(theta):
             new_theta = torch.cat((batch, torch.tensor([[0, 0, 1]]).cuda()), 0)
             theta = new_theta.inverse().cuda()
@@ -270,8 +280,143 @@ class SPTnet(nn.Module):
         x = F.grid_sample(x, grid)
         return x
 
-    def forward(self, x):
-        x, theta = self.stn(x)
+    def forward(self, ori_img):
+        x, theta = self.stn(ori_img)
         x = self.conv(x)
         x = self.rev_stn(x, theta)
         return x
+
+
+class SAHead(nn.Module):
+    def __init__(self, in_size, out_size, level, gpus, dropout_val, ks=3, padding=1, stride=1):
+        super(SAHead, self).__init__()
+        self.gpus = gpus
+        self.conv1 = nn.Sequential(
+            nn.Dropout(dropout_val),
+            nn.Conv2d(in_size, out_size, ks, padding=1, stride=stride),
+            nn.BatchNorm2d(out_size),
+            nn.ReLU(inplace=True),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Dropout(dropout_val),
+            nn.Conv2d(out_size, out_size, ks, padding=1, stride=stride),
+            nn.BatchNorm2d(out_size),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout_val),
+            nn.Conv2d(out_size, out_size, ks, padding=1, stride=stride),
+            nn.BatchNorm2d(out_size),
+            nn.ReLU(inplace=True),
+        )
+        self.sigmoid = nn.Sigmoid()
+        self.localization = nn.Sequential(
+            nn.Conv2d(out_size, 8, kernel_size=7, padding=3),  # 64**2/level**2 *8
+            nn.MaxPool2d(2),  # 32*32*8
+            nn.ReLU(True),
+            nn.Conv2d(8, 16, kernel_size=5, padding=2),  # 32*32*16
+            nn.MaxPool2d(2),  # 16*16*16
+            nn.ReLU(True)
+        )
+        # W/4 H/4 16
+        # W/8 H/8 16
+        # tranformation regressor for theta
+        self.fc_loc = nn.Sequential(
+            nn.Linear(level * 16, 16),
+            nn.Linear(16, 3 * 2)
+        )
+        self.fc_loc[1].weight.data.zero_()
+        self.fc_loc[1].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+        if self.gpus:
+            self.conv1.cuda()
+            self.fc_loc.cuda()
+            self.conv2.cuda()
+            self.localization.cuda()
+            self.sigmoid.cuda()
+
+    def stn(self, x):
+        xs = self.localization(x)
+        xs = xs.view(-1, xs.size(1) * xs.size(2) * xs.size(3))
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+        grid = F.affine_grid(theta, x.size())
+        x = F.grid_sample(x, grid)
+        return x, theta
+
+    def rev_stn(self, x, theta: torch.tensor):
+        if self.gpus:
+            empty_tensor = torch.empty(theta.size()).cuda()
+        else:
+            empty_tensor = torch.empty(theta.size())
+        for val, batch in enumerate(theta):
+            if self.gpus:
+                new_theta = torch.cat((batch, torch.tensor([[0, 0, 1]]).cuda()), 0)
+                theta = new_theta.inverse().cuda()
+
+            else:
+                new_theta = torch.cat((batch, torch.tensor([[0, 0, 1]])), 0)
+                theta = new_theta.inverse()
+
+            theta = theta[:2, :]
+            empty_tensor[val, :, :] = theta
+        grid = F.affine_grid(empty_tensor, x.size())
+        x = F.grid_sample(x, grid)
+        return x
+
+    def forward(self, x):
+        upper = self.conv1(x)
+        up, theta = self.stn(upper)
+        middle = self.conv2(up)
+        middle = self.sigmoid(middle)
+        lower = self.conv1(x)
+        t = self.rev_stn(middle, theta)
+        vals = nn.functional.softmax(t, dim=1)
+        return lower * vals
+
+
+class multiHeadBlock(nn.Module):
+    def __init__(self, num_heads, in_size, level, gpus, dropout_val, ks=3, padding=1, stride=1):
+        super().__init__()
+        self.gpus = gpus
+        self.in_size = in_size
+        self.mlist = nn.ModuleList()
+        self.level = int(8/level)**2
+        for i in range(0, num_heads):
+            self.mlist.append(SAHead(in_size, in_size, self.level, gpus, dropout_val, ks, padding, stride))
+        self.conv = SimpleUnetConv(in_size * num_heads, out_size=in_size, stride = 1, gpus=gpus,
+                                   dropout_val=dropout_val)
+        self.norm = nn.BatchNorm2d(in_size)
+        if self.gpus:
+            self.mlist.cuda()
+            self.conv.cuda()
+            self.norm.cuda()
+
+    def forward(self, x):
+        e_torch = self.mlist[0](x)
+        if self.gpus:
+            e_torch.cuda()
+        for i in self.mlist[1:]:
+            e_torch = torch.cat([e_torch, i(x)], dim=1)
+        res = self.conv(e_torch)
+        final = res + x
+        final = self.norm(final)
+        return final
+
+
+class forwardProcessingBlock(nn.Module):
+    def __init__(self, in_size, gpus, dropout_val, ks=3, padding=1, stride=1):
+        super(forwardProcessingBlock, self).__init__()
+        self.gpus = gpus
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_size, in_size, ks, padding=padding, stride=stride),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_size, in_size, ks, padding=padding, stride=stride),
+            nn.ReLU(inplace=True)
+        )
+        self.norm = nn.BatchNorm2d(in_size)
+        if self.gpus:
+            self.conv.cuda()
+            self.norm.cuda()
+
+    def forward(self, x):
+        conved = self.conv(x)
+        res = conved + x
+        return self.norm(res)

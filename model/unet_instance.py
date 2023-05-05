@@ -1,6 +1,7 @@
 from model.model_components import *
 from model.unet_super import UnetSuper
 from utils import weights_init
+import sys
 
 class Unet(UnetSuper):
     """Unet
@@ -9,11 +10,10 @@ class Unet(UnetSuper):
     original paper: https://arxiv.org/pdf/1505.04597
     """
     def __init__(self, hparams, input_channels, is_deconv=True, is_batchnorm=True, on_gpu=False, **kwargs):
-        super().__init__( hparams=hparams, **kwargs)
+        super().__init__(hparams=hparams, **kwargs)
         self.in_channels = input_channels
         self.is_deconv = is_deconv
         self.is_batchnorm = is_batchnorm
-        self.input = input_channels
         filters = [32, 64, 128, 256]
         self.conv1 = UnetConv(self.in_channels, filters[0], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
         self.conv2 = UnetConv(filters[0], filters[1], is_batchnorm, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
@@ -75,19 +75,27 @@ class RTUnet(UnetSuper):
         self.is_batchnorm = is_batchnorm
         self.input = input_channels
         filters = [8, 16, 32, 64]
+        self.head1 = multiHeadBlock(2, input_channels, 1,  gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.fwd1 = forwardProcessingBlock(input_channels,  gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv1 = UnetConv(input_channels, filters[0], is_batchnorm=True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.head2 = multiHeadBlock(2, filters[0], 2, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.fwd2 = forwardProcessingBlock(filters[0],  gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv2 = UnetConv(filters[0], filters[1], is_batchnorm=True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.head3 = multiHeadBlock(2, filters[1], 3, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.fwd3 = forwardProcessingBlock(filters[1], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.conv3 = UnetConv(filters[1], filters[2], is_batchnorm=True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
 
-        self.conv1 = SPTnet(self.in_channels, filters[0], 32,  gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.conv2 = UnetConv(filters[0], filters[1], 16,  True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.center = UnetConv(filters[1], filters[2], 8, True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+
         # upsampling
-        self.up_concat3 = UnetUp(filters[3], filters[2], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.up_concat2 = UnetUp(filters[2], filters[1], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
-        self.up_concat1 = UnetUp(filters[1], filters[0], True, gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat3 = UnetUp(filters[3], filters[2], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat2 = UnetUp(filters[2], filters[1], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
+        self.up_concat1 = UnetUp(filters[1], filters[0], gpus=on_gpu, dropout_val=kwargs["dropout_val"])
 
         # final conv (without any concat)
         self.final = nn.Conv2d(filters[0], 7, 1)
         if on_gpu:
-            self.conv1.cuda()
+            self.head1.cuda()
+            self.head2.cuda()
             self.conv2.cuda()
             self.conv3.cuda()
             self.center.cuda()
@@ -108,16 +116,22 @@ class RTUnet(UnetSuper):
         for chunks in along_x:
             merge_y = []
             for chunk in chunks:
-                conv1 = self.conv1(chunk)  # 16*64*64
-                maxpool1 = maxpool(conv1)  # 16*32*32
+                x1 = self.head1(chunk)  # 16*64*64
+                y1 = self.fwd1(x1)
+                z1 = self.conv1(y1)
+                maxpool1 = maxpool(z1)  # 16*32*32
 
-                conv2 = self.conv2(maxpool1)  # 32*32*32
-                maxpool2 = maxpool(conv2)  # 32*16*16
+                x2 = self.head2(maxpool1)  # 16*64*64
+                y2 = self.fwd2(x2)
+                z2 = self.conv2(y2)
+                maxpool2 = maxpool(z2)  # 32*16*16
 
-                center = self.center(maxpool2)
+                x3 = self.head3(maxpool2)  # 16*64*64
+                y3 = self.fwd3(x3)
+                z3 = self.conv3(y3)
 
-                up2 = self.up_concat2(center, conv2)  # 32*32*32
-                up1 = self.up_concat1(up2, conv1)  # 16*64*64
+                up2 = self.up_concat2(z3, z2)  # 32*32*32
+                up1 = self.up_concat1(up2, z1)  # 16*64*64
 
                 final = self.final(up1)
                 finalize = nn.functional.softmax(final, dim=1)

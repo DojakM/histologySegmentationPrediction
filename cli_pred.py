@@ -22,7 +22,7 @@ WD = os.path.dirname(__file__)
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
 @click.option('-suf', '--suffix', default=".", type=str, help='Path to write the output to')
-@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=True, help='Whether to remove model after '
+@click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False, help='Whether to remove model after '
                                                                                    'prediction or not.')
 @click.option('-m', '--model', type=str, default="models/U_NET.ckpt", help="Path to model")
 @click.option('--architecture', type=str, default="U-Net", help="U-Net or CU-Net")
@@ -125,11 +125,11 @@ def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: 
     if not _check_exists(path_to_pytorch_model):
         download(architecture)
     if architecture == "U-Net":
-        model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model = Unet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
         model.apply(weights_init)
-        state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
+        state_dict = torch.load("models/U_NET.ckpt", map_location="cpu")
     elif architecture == "CU-Net":
-        model = ContextUnet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        model = ContextUnet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
         model.apply(weights_init)
         state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
     else:

@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 import pytorch_lightning as pl
 import torch
 
-from losses.FocalLosses import FocalLoss
+from losses.FocalLosses import FocalLoss, Cyclical_FocalLoss
 
 
 class UnetSuper(pl.LightningModule):
@@ -21,22 +21,25 @@ class UnetSuper(pl.LightningModule):
         else:
             self.weights = [0.001, 1, 1, 1, 1, 1, 1]
         self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
+        #else:
+        #    self.criterion = Cyclical_FocalLoss()
         self.criterion.cuda()
         self._to_console = False
 
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        parser.add_argument('--num_workers', type=int, default=16, metavar='N', help='number of workers (default: 16)')
+        parser.add_argument('--num_workers', type=int, default=4, metavar='N', help='number of workers (default: 16)')
         parser.add_argument('--lr', type=float, default=0.003, help='learning rate (default: 0.003)')
         parser.add_argument('--gamma-factor', type=float, default=2.0, help='gamma factor (default: 2.0)')
         parser.add_argument('--weight-decay', type=float, default=1e-5, help='weight decay (default: 0.0002)')
         parser.add_argument('--epsilon', type=float, default=1e-16, help='epsilon (default: 1e-16)')
-        parser.add_argument('--models', type=str, default="unet", help='the wanted model')
+        parser.add_argument('--models', type=str, default="Unet", help='the wanted model')
         parser.add_argument('--training-batch-size', type=int, default=10, help='Input batch size for training')
         parser.add_argument('--test-batch-size', type=int, default=500, help='Input batch size for testing')
         parser.add_argument('--dropout-val', type=float, default=0, help='dropout_value for layers')
         parser.add_argument('--flat-weights', type=bool, default=False, help='set all weights to 0.01')
+        parser.add_argument('--loss', type=str, default="FocalLoss")
         return parser
 
     @abc.abstractmethod
@@ -65,7 +68,7 @@ class UnetSuper(pl.LightningModule):
 
         x, y = train_batch
         prob_mask = self.forward(x)
-        loss = self.criterion(prob_mask, y.type(torch.long))
+        loss = self.criterion(prob_mask, y.type(torch.long), self.current_epoch)
 
         iter_iou, iter_count = iou_fnc(torch.argmax(prob_mask, dim=1).float(), y, self.args['num_classes'])
         for i in range(self.args['num_classes']):
@@ -117,7 +120,7 @@ class UnetSuper(pl.LightningModule):
         output = {}
         x, y = test_batch
         prob_mask = self.forward(x)
-        loss = self.criterion(prob_mask, y.type(torch.long))
+        loss = self.criterion(prob_mask, y.type(torch.long), self.current_epoch)
         iter_iou, iter_count = iou_fnc(torch.argmax(prob_mask, dim=1).float(), y, self.args['num_classes'])
         for i in range(self.args['num_classes']):
             output['val_iou_' + str(i)] = torch.tensor(iter_iou[i])
@@ -173,7 +176,7 @@ class UnetSuper(pl.LightningModule):
 
         x, y = test_batch
         prob_mask = self.forward(x)
-        loss = self.criterion(prob_mask, y.type(torch.long))
+        loss = self.criterion(prob_mask, y.type(torch.long), self.current_epoch)
 
         iter_iou, iter_count = iou_fnc(torch.argmax(prob_mask, dim=1).float(), y, self.args['num_classes'])
         for i in range(self.args['num_classes']):
@@ -226,7 +229,7 @@ class UnetSuper(pl.LightningModule):
 
         :return: output - Initialized optimizer and scheduler
         """
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.args['lr'])
+        self.optimizer = torch.optim.AdamW(self.parameters(), lr=self.args['lr'])
         self.scheduler = {'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-6, verbose=True, ),
             'monitor': 'train_avg_loss', }
