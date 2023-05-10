@@ -1,5 +1,10 @@
 # histologySegmentationPrediction
 
-A tool to predict nuclei from histological images.
-It uses the CoNIC dataset (https://arxiv.org/abs/2108.11195) to generate the model.
-However other models derived from the trainings models can be used.
+Features:
+* prediction tool for histological images 
+* uncertainty calculation of prediction
+* guidedGradCAM for prediction
+
+Models:
+* U-Net
+* Context U-Net
